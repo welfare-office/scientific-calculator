@@ -1,0 +1,15 @@
+{
+  "name": "calculator-engine",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "calculator_engine_bg.wasm",
+    "calculator_engine.js",
+    "calculator_engine.d.ts"
+  ],
+  "main": "calculator_engine.js",
+  "types": "calculator_engine.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
