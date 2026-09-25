@@ -113,40 +113,44 @@ export default function App() {
           </div>
           <div
             className={`readout${snap.error ? ' is-error' : ''}`}
-            style={{ fontSize: displaySize(snap.display.length) }}
+            style={{
+              fontSize: `min(${displaySize(snap.display.length)}px, ${(displaySize(snap.display.length) / 4).toFixed(1)}cqw)`,
+            }}
           >
             {snap.display}
           </div>
         </div>
 
-        <div className="pad pad-sci" role="group" aria-label="Scientific functions">
-          {SCI_ROWS.flat().map((def) => {
-            const r = resolve(def)
-            return (
-              <CalcKey
-                key={`${def.id}-${r.id}`}
-                def={r}
-                active={isActive(def)}
-                flash={flash === r.id}
-                onPress={press}
-              />
-            )
-          })}
-        </div>
+        <div className="pads">
+          <div className="pad pad-sci" role="group" aria-label="Scientific functions">
+            {SCI_ROWS.flat().map((def) => {
+              const r = resolve(def)
+              return (
+                <CalcKey
+                  key={`${def.id}-${r.id}`}
+                  def={r}
+                  active={isActive(def)}
+                  flash={flash === r.id}
+                  onPress={press}
+                />
+              )
+            })}
+          </div>
 
-        <div className="pad pad-main" role="group" aria-label="Keypad">
-          {MAIN_ROWS.flat().map((def) => {
-            const r = resolve(def)
-            return (
-              <CalcKey
-                key={`${def.id}-${r.id}`}
-                def={r}
-                active={isActive(def)}
-                flash={flash === r.id}
-                onPress={press}
-              />
-            )
-          })}
+          <div className="pad pad-main" role="group" aria-label="Keypad">
+            {MAIN_ROWS.flat().map((def) => {
+              const r = resolve(def)
+              return (
+                <CalcKey
+                  key={`${def.id}-${r.id}`}
+                  def={r}
+                  active={isActive(def)}
+                  flash={flash === r.id}
+                  onPress={press}
+                />
+              )
+            })}
+          </div>
         </div>
       </main>
 
