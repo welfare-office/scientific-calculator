@@ -9,5 +9,10 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 wasm-bindgen = "0.2"
 getrandom = { version = "0.2", features = ["js"] }
+malachite = { version = "0.4", default-features = false, features = ["enable_serde", "naturals_and_integers"] }
+
+[profile.release]
+opt-level = 3
+lto = true
 
 [dev-dependencies]

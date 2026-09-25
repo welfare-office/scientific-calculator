@@ -43,6 +43,30 @@ export class Calculator {
         }
     }
     /**
+     * full decimal text when computed synchronously (async path streams it
+     * through the worker instead); "" when unavailable
+     * @returns {string}
+     */
+    full_result() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.calculator_full_result(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * @returns {boolean}
+     */
+    has_big_result() {
+        const ret = wasm.calculator_has_big_result(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
      * @returns {boolean}
      */
     has_entry() {
@@ -93,6 +117,34 @@ export class Calculator {
         wasm.calculator_press(this.__wbg_ptr, ptr0, len0);
     }
     /**
+     * called by the UI when a worker finishes: show approx + tape label
+     * @param {string} approx
+     * @param {string} label
+     */
+    set_big_result(approx, label) {
+        const ptr0 = passStringToWasm0(approx, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(label, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        wasm.calculator_set_big_result(this.__wbg_ptr, ptr0, len0, ptr1, len1);
+    }
+    /**
+     * drains a queued long-computation request; "" when none
+     * @returns {string}
+     */
+    take_long_job() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.calculator_take_long_job(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
      * expression preview shown above the main display
      * @returns {string}
      */
@@ -110,6 +162,146 @@ export class Calculator {
     }
 }
 if (Symbol.dispose) Calculator.prototype[Symbol.dispose] = Calculator.prototype.free;
+
+/**
+ * Async computation job exposed to JS: the worker drives `step()` in a loop,
+ * persists `checkpoint()` bytes to OPFS, and can `restore()` to resume.
+ */
+export class WasmJob {
+    static __wrap(ptr) {
+        const obj = Object.create(WasmJob.prototype);
+        obj.__wbg_ptr = ptr;
+        WasmJobFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        WasmJobFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_wasmjob_free(ptr, 0);
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    checkpoint() {
+        const ret = wasm.wasmjob_checkpoint(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * Parse a job spec "fact:100000" / "pow:2:999999"; undefined if unknown.
+     * @param {string} spec
+     * @returns {WasmJob | undefined}
+     */
+    static fromSpec(spec) {
+        const ptr0 = passStringToWasm0(spec, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmjob_fromSpec(ptr0, len0);
+        return ret === 0 ? undefined : WasmJob.__wrap(ret);
+    }
+    /**
+     * @returns {boolean}
+     */
+    isDone() {
+        const ret = wasm.wasmjob_isDone(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * @returns {string}
+     */
+    key() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.wasmjob_key(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * @returns {string}
+     */
+    label() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.wasmjob_label(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * @param {number} n
+     * @returns {WasmJob}
+     */
+    static newFactorial(n) {
+        const ret = wasm.wasmjob_newFactorial(n);
+        return WasmJob.__wrap(ret);
+    }
+    /**
+     * @param {number} base
+     * @param {number} exp
+     * @returns {WasmJob}
+     */
+    static newPow(base, exp) {
+        const ret = wasm.wasmjob_newPow(base, exp);
+        return WasmJob.__wrap(ret);
+    }
+    /**
+     * @returns {number}
+     */
+    progress() {
+        const ret = wasm.wasmjob_progress(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Restore from checkpoint bytes; returns undefined if the bytes are invalid.
+     * @param {Uint8Array} bytes
+     * @returns {WasmJob | undefined}
+     */
+    static restore(bytes) {
+        const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmjob_restore(ptr0, len0);
+        return ret === 0 ? undefined : WasmJob.__wrap(ret);
+    }
+    /**
+     * One chunk of work. Returns progress in [0,1]; 1.0 means finished.
+     * @returns {number}
+     */
+    step() {
+        const ret = wasm.wasmjob_step(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Full decimal expansion of the result. Expensive - call once when done.
+     * @returns {string}
+     */
+    toDecimal() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.wasmjob_toDecimal(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+}
+if (Symbol.dispose) WasmJob.prototype[Symbol.dispose] = WasmJob.prototype.free;
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
@@ -227,6 +419,9 @@ function __wbg_get_imports() {
 const CalculatorFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_calculator_free(ptr, 1));
+const WasmJobFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_wasmjob_free(ptr, 1));
 
 function addToExternrefTable0(obj) {
     const idx = wasm.__externref_table_alloc();
@@ -262,6 +457,13 @@ function handleError(f, args) {
 
 function isLikeNone(x) {
     return x === undefined || x === null;
+}
+
+function passArray8ToWasm0(arg, malloc) {
+    const ptr = malloc(arg.length * 1, 1) >>> 0;
+    getUint8ArrayMemory0().set(arg, ptr / 1);
+    WASM_VECTOR_LEN = arg.length;
+    return ptr;
 }
 
 function passStringToWasm0(arg, malloc, realloc) {

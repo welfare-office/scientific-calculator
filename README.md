@@ -36,6 +36,25 @@ precedence) with the iOS interaction model:
 - `Deg`/`Rad` angle modes, memory keys (`mc m+ m- mr`)
 - `C`/`AC`, backspace, `±`, error state with recovery
 
+## Long computation mode
+
+Operations that overflow `f64` are routed by size:
+
+- `n!` ≤ 170 → instant `f64`; 171–1000 → inline arbitrary-precision result
+  (shown as `d.eeeeeeeee…` + digit count, full text copyable via the copy button)
+- `n!` ≤ 1,000,000 → **long mode**: a Web Worker drives a chunked job on
+  `malachite` big integers (binary-counter merge keeps products balanced;
+  `simd128` enabled for leaf products). Progress, cancel (AC/C or ✕), and
+  automatic **checkpoint/resume** — state is written to OPFS (`calc-ckpt/`)
+  ~twice a second, so a reload or cancel mid-run simply resumes when the
+  job is re-entered. Finished results are also persisted to OPFS.
+- `b^e` with integer `e` → same routing by result digit count
+  (>280 digits inline bigint, >2,000 digits async, >8,000,000 refused as
+  "Too large").
+
+The main thread never blocks; the display shows live progress while keys
+stay responsive for cancellation.
+
 ## Keyboard
 
 Digits, `+ - * / ^ ! % ( )`, `.`, `Enter`/`=`, `Backspace`, `Escape`, `p` (π), `e`.

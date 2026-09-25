@@ -10,6 +10,12 @@ export interface CalcSnapshot {
   hasEntry: boolean
   hasMemory: boolean
   activeOp: string
+  /** "" when no job queued; drained once — watch jobSeq to react */
+  longJob: string
+  /** increments each time a long job is queued */
+  jobSeq: number
+  /** a big (non-f64) result is being displayed; fullResult() may have text */
+  hasResult: boolean
 }
 
 const initial: CalcSnapshot = {
@@ -21,16 +27,22 @@ const initial: CalcSnapshot = {
   hasEntry: false,
   hasMemory: false,
   activeOp: '',
+  longJob: '',
+  jobSeq: 0,
+  hasResult: false,
 }
 
 export function useCalculator() {
   const calc = useRef<Calculator | null>(null)
+  const jobSeq = useRef(0)
   const [ready, setReady] = useState(false)
   const [snap, setSnap] = useState<CalcSnapshot>(initial)
 
   const refresh = useCallback(() => {
     const c = calc.current
     if (!c) return
+    const spec = c.take_long_job()
+    if (spec) jobSeq.current += 1
     setSnap({
       display: c.display(),
       tape: c.tape(),
@@ -40,6 +52,9 @@ export function useCalculator() {
       hasEntry: c.has_entry(),
       hasMemory: c.has_memory(),
       activeOp: c.active_op(),
+      longJob: spec,
+      jobSeq: jobSeq.current,
+      hasResult: c.has_big_result(),
     })
   }, [])
 
@@ -64,5 +79,15 @@ export function useCalculator() {
     [refresh],
   )
 
-  return { ready, snap, press }
+  const setBigResult = useCallback(
+    (approx: string, label: string) => {
+      calc.current?.set_big_result(approx, label)
+      refresh()
+    },
+    [refresh],
+  )
+
+  const fullResult = useCallback(() => calc.current?.full_result() ?? '', [])
+
+  return { ready, snap, press, setBigResult, fullResult }
 }

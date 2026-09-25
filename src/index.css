@@ -151,6 +151,12 @@
   background: var(--panel-ring);
 }
 
+.bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 /* ---- display ------------------------------------------------------ */
 
 .display {
@@ -194,6 +200,69 @@
 .readout.is-error {
   font-weight: 400;
   letter-spacing: 0;
+}
+
+/* ---- long-computation run view ------------------------------------- */
+
+.runview {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: stretch;
+  width: 100%;
+  height: 100%;
+  padding-bottom: min(8px, 2cqw);
+}
+
+.run-label {
+  font-size: min(15px, 3.8cqw);
+  color: var(--text-lo);
+  text-align: right;
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.run-resumed {
+  margin-left: 0.45em;
+  opacity: 0.65;
+}
+
+.run-pct {
+  text-align: right;
+  font-weight: 300;
+  font-size: min(64px, 16cqw);
+  line-height: 1.05;
+  letter-spacing: -0.015em;
+  color: var(--text-hi);
+  font-variant-numeric: tabular-nums;
+}
+
+.run-track {
+  height: 2px;
+  margin-top: min(8px, 2cqw);
+  border-radius: 1px;
+  background: var(--panel-ring);
+  overflow: hidden;
+}
+
+.run-track i {
+  display: block;
+  height: 100%;
+  background: var(--text-hi);
+  transform-origin: left center;
+  transition: transform 180ms linear;
+}
+
+.run-hint {
+  margin-top: min(7px, 1.8cqw);
+  font-size: min(10px, 2.6cqw);
+  color: var(--text-lo);
+  text-align: right;
+  letter-spacing: 0.05em;
+}
+
+.pads[aria-disabled='true'] {
+  opacity: 0.6;
 }
 
 /* ---- keypads ------------------------------------------------------- */

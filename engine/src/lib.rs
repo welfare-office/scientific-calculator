@@ -1,5 +1,84 @@
 use wasm_bindgen::prelude::*;
 
+pub mod long;
+
+/// Async computation job exposed to JS: the worker drives `step()` in a loop,
+/// persists `checkpoint()` bytes to OPFS, and can `restore()` to resume.
+#[wasm_bindgen]
+pub struct WasmJob {
+    inner: long::LongJob,
+}
+
+#[wasm_bindgen]
+impl WasmJob {
+    #[wasm_bindgen(js_name = "newFactorial")]
+    pub fn new_factorial(n: f64) -> WasmJob {
+        WasmJob {
+            inner: long::LongJob::new_factorial(n as u64),
+        }
+    }
+
+    #[wasm_bindgen(js_name = "newPow")]
+    pub fn new_pow(base: f64, exp: f64) -> WasmJob {
+        WasmJob {
+            inner: long::LongJob::new_pow(base as u64, exp as u64),
+        }
+    }
+
+    /// Restore from checkpoint bytes; returns undefined if the bytes are invalid.
+    #[wasm_bindgen(js_name = "restore")]
+    pub fn restore_js(bytes: &[u8]) -> Option<WasmJob> {
+        long::LongJob::restore(bytes).map(|inner| WasmJob { inner })
+    }
+
+    /// Parse a job spec "fact:100000" / "pow:2:999999"; undefined if unknown.
+    #[wasm_bindgen(js_name = "fromSpec")]
+    pub fn from_spec(spec: &str) -> Option<WasmJob> {
+        let parts: Vec<&str> = spec.split(':').collect();
+        let inner = match parts.as_slice() {
+            ["fact", n] => n.parse::<u64>().ok().map(long::LongJob::new_factorial),
+            ["pow", b, e] => match (b.parse::<u64>(), e.parse::<u64>()) {
+                (Ok(b), Ok(e)) => Some(long::LongJob::new_pow(b, e)),
+                _ => None,
+            },
+            _ => None,
+        }?;
+        Some(WasmJob { inner })
+    }
+
+    /// One chunk of work. Returns progress in [0,1]; 1.0 means finished.
+    pub fn step(&mut self) -> f64 {
+        self.inner.step()
+    }
+
+    pub fn checkpoint(&self) -> Vec<u8> {
+        self.inner.checkpoint()
+    }
+
+    pub fn key(&self) -> String {
+        self.inner.key()
+    }
+
+    pub fn label(&self) -> String {
+        self.inner.label()
+    }
+
+    pub fn progress(&self) -> f64 {
+        self.inner.progress()
+    }
+
+    #[wasm_bindgen(js_name = "isDone")]
+    pub fn is_done(&self) -> bool {
+        self.inner.done()
+    }
+
+    /// Full decimal expansion of the result. Expensive - call once when done.
+    #[wasm_bindgen(js_name = "toDecimal")]
+    pub fn to_decimal(&self) -> String {
+        self.inner.result().to_string()
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Tokens
 // ---------------------------------------------------------------------------
@@ -267,6 +346,10 @@ pub struct Calculator {
     has_memory: bool,
     last_repeat: Option<Vec<Tok>>, // for repeated '='
     error: bool,
+    pending_job: Option<String>, // "fact:100000" / "pow:2:999999" awaiting worker pickup
+    message: Option<String>,     // transient readout text ("Too large")
+    big_result: Option<(String, String)>, // (approx display, tape label)
+    full_result: Option<String>,          // full decimal text for copy (sync path)
 }
 
 #[wasm_bindgen]
@@ -283,6 +366,10 @@ impl Calculator {
             has_memory: false,
             last_repeat: None,
             error: false,
+            pending_job: None,
+            message: None,
+            big_result: None,
+            full_result: None,
         }
     }
 
@@ -291,6 +378,12 @@ impl Calculator {
     pub fn display(&self) -> String {
         if self.error {
             return "Error".into();
+        }
+        if let Some(m) = &self.message {
+            return m.clone();
+        }
+        if let Some((approx, _)) = &self.big_result {
+            return approx.clone();
         }
         if !self.entry.is_empty() {
             return format_entry(&self.entry);
@@ -304,6 +397,9 @@ impl Calculator {
 
     /// expression preview shown above the main display
     pub fn tape(&self) -> String {
+        if let Some((_, label)) = &self.big_result {
+            return label.clone();
+        }
         let mut s = String::new();
         for t in &self.toks {
             s.push_str(&tok_label(t));
@@ -339,10 +435,74 @@ impl Calculator {
         String::new()
     }
 
+    /// drains a queued long-computation request; "" when none
+    pub fn take_long_job(&mut self) -> String {
+        self.pending_job.take().unwrap_or_default()
+    }
+
+    /// called by the UI when a worker finishes: show approx + tape label
+    pub fn set_big_result(&mut self, approx: &str, label: &str) {
+        self.big_result = Some((approx.to_string(), label.to_string()));
+        self.toks.clear();
+        self.entry.clear();
+        self.just_eval = false;
+        self.error = false;
+    }
+
+    pub fn has_big_result(&self) -> bool {
+        self.big_result.is_some()
+    }
+
+    /// full decimal text when computed synchronously (async path streams it
+    /// through the worker instead); "" when unavailable
+    pub fn full_result(&self) -> String {
+        self.full_result.clone().unwrap_or_default()
+    }
+
     // ---- key input ------------------------------------------------------
 
     /// single entry point: press(id) where id is a key identifier
     pub fn press(&mut self, key: &str) {
+        self.message = None;
+        // a committed big result is consumed (or dismissed) by the next input
+        if self.big_result.is_some() && !matches!(key, "2nd" | "deg" | "rad" | "toggle_deg") {
+            let (approx, _) = self.big_result.take().unwrap();
+            let seed = approx.parse::<f64>().ok().filter(|v| v.is_finite());
+            self.toks.clear();
+            self.entry.clear();
+            self.just_eval = false;
+            match key {
+                "eq" | "mc" | "mr" => return,
+                "ac" | "c" | "back" => {
+                    self.all_clear();
+                    return;
+                }
+                "m+" | "m-" => {
+                    if let Some(v) = seed {
+                        let sign = if key == "m+" { 1.0 } else { -1.0 };
+                        self.memory += sign * v;
+                        self.has_memory = true;
+                    }
+                    return;
+                }
+                "add" | "sub" | "mul" | "div" | "pow" | "root" => match seed {
+                    Some(v) => self.toks.push(Tok::Num(v)),
+                    None => return,
+                },
+                "neg" => match seed {
+                    Some(v) => {
+                        self.toks.push(Tok::Num(-v));
+                        return;
+                    }
+                    None => return,
+                },
+                k if FUNC_NAMES.contains(&k) || k == "fact" || k == "pct" => match seed {
+                    Some(v) => self.toks.push(Tok::Num(v)),
+                    None => return,
+                },
+                _ => {} // digits, dot, parens, constants: fresh input
+            }
+        }
         match key {
             "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" => {
                 self.digit(key.chars().next().unwrap())
@@ -516,6 +676,37 @@ impl Calculator {
         }
         // capture last op + operand for repeat before eval
         self.commit_entry();
+        // big integer power: detect [b ^ e] and route by size
+        if let [Tok::Num(b), Tok::Op('^'), Tok::Num(e)] = self.toks.as_slice() {
+            let (b, e) = (*b, *e);
+            if e >= 0.0 && e.fract() == 0.0 && b.fract() == 0.0 && b.abs() <= 9e18 && e <= 1e15 {
+                let digits = if b.abs() <= 1.0 { 1.0 } else { e * b.abs().log10() };
+                if digits > long::LONG_POW_MAX_DIGITS {
+                    self.message = Some("Too large".into());
+                    self.toks = vec![Tok::Num(b)];
+                    return;
+                } else if digits > long::POW_SYNC_MAX_DIGITS {
+                    self.pending_job =
+                        Some(format!("pow:{}:{}", b.abs() as u64, e as u64));
+                    self.toks = vec![Tok::Num(b)];
+                    self.entry.clear();
+                    return;
+                } else if digits > 280.0 {
+                    // beyond f64 range but small enough to compute inline
+                    let nat = long::pow_big(b.abs() as u64, e as u64);
+                    let neg = b < 0.0 && (e as u64) % 2 == 1;
+                    let mut dec = nat.to_string();
+                    if neg {
+                        dec.insert(0, '-');
+                    }
+                    self.toks.clear();
+                    let label = format!("{}^{}", trim_num(b), trim_num(e));
+                    self.big_result = Some((long::approx_of(&dec), label));
+                    self.full_result = Some(dec);
+                    return;
+                }
+            }
+        }
         let mut rep: Vec<Tok> = Vec::new();
         for t in self.toks.iter().rev() {
             match t {
@@ -653,9 +844,32 @@ impl Calculator {
         }
         if !self.entry.is_empty() {
             if let Ok(n) = self.entry.parse::<f64>() {
-                if let Ok(v) = factorial(n) {
-                    self.entry = trim_num(v);
-                    return;
+                if n >= 0.0 && n.fract() == 0.0 && n <= u64::MAX as f64 {
+                    let n = n as u64;
+                    if n <= long::BIGINT_FACT_MAX {
+                        // fits f64 domain: instant
+                        if let Ok(v) = factorial(n as f64) {
+                            self.entry = trim_num(v);
+                            return;
+                        }
+                    } else if n <= 1_000 {
+                        // bigint, fast enough to run inline
+                        let dec = long::factorial_big(n).to_string();
+                        self.entry.clear();
+                        self.toks.clear();
+                        let label = format!("{n}!");
+                        self.big_result = Some((long::approx_of(&dec), label));
+                        self.full_result = Some(dec);
+                        return;
+                    } else if n <= long::LONG_FACT_MAX {
+                        // long computation: handed to the worker
+                        self.pending_job = Some(format!("fact:{n}"));
+                        return;
+                    } else {
+                        self.entry.clear();
+                        self.message = Some("Too large".into());
+                        return;
+                    }
                 }
             }
             self.error = true;
